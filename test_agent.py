@@ -1,6 +1,7 @@
-
+from app.agent import execute_tool, summarize_result, route_after_tool
 from app.tools.calculator import add, multiply
-from app.agent import execute_tool, summarize_result
+from app.tools.date_tool import get_current_date
+
 
 
 def test_addition():
@@ -53,3 +54,43 @@ def test_resume_resultats():
     result = summarize_result(state)
 
     assert "370" in result["answer"]
+
+def test_execution_outil_inconnu():
+    state = {
+        "task": "Test",
+        "answer": "",
+        "tool_name": "outil_inexistant",
+        "tool_args": {},
+        "tool_result": "",
+        "tool_history": [],
+        "last_tool_name": "",
+        "steps": 0,
+    }
+
+    result = execute_tool(state)
+
+    assert "inconnu" in result["answer"].lower()
+    assert result["steps"] == 0
+
+
+def test_limite_appels_outils():
+    state = {
+        "task": "Test",
+        "answer": "",
+        "tool_name": "add",
+        "tool_args": {"a": 10, "b": 5},
+        "tool_result": "",
+        "tool_history": [],
+        "last_tool_name": "",
+        "steps": 3,
+    }
+
+    result = route_after_tool(state)
+
+    assert result == "summarize_result"
+
+def test_get_current_date():
+    result = get_current_date()
+
+    assert isinstance(result, str)
+    assert len(result) > 0

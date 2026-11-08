@@ -11,6 +11,7 @@ from google.genai import types
 from langgraph.graph import StateGraph, START, END
 
 from app.tools.calculator import add, multiply
+from app.tools.date_tool import get_current_date
 
 
 # 1. Configuration de Gemini
@@ -71,11 +72,18 @@ def multiply_tool(a: float, b: float) -> dict:
     """Multiplie deux nombres."""
     return {"result": multiply(a, b)}
 
+def get_current_date_tool() -> dict:
+    return {
+        "result": get_current_date()
+    }
+
 
 TOOLS = {
     "add": add_tool,
     "multiply": multiply_tool,
+    "get_current_date": get_current_date_tool,
 }
+
 
 
 # 3. Déclaration des outils accessibles à Gemini
@@ -116,11 +124,21 @@ TOOL_DECLARATIONS = [
             "required": ["a", "b"],
         },
     ),
+    types.FunctionDeclaration(
+        name="get_current_date",
+        description="Retourne la date et l'heure actuelles.",
+        parameters={
+            "type": "OBJECT",
+            "properties": {},
+        },
+    ),
 ]
 
 GEMINI_TOOLS = [
     types.Tool(function_declarations=TOOL_DECLARATIONS)
 ]
+
+
 
 
 # 4. État partagé entre les étapes de LangGraph
@@ -135,18 +153,23 @@ class AgentState(TypedDict):
     steps: int
 
 
-# 5. Gemini analyse la demande
-def ask_gemini(state: AgentState) -> dict:
+def ask_gemini(state: AgentState):
     contents = (
         f"Tâche de l'utilisateur : {state['task']}\n\n"
-        "Tu es un assistant qui peut utiliser les outils "
-        "add et multiply.\n"
-        "Si la tâche nécessite un calcul, choisis l'outil adapté. "
-        "Si plusieurs calculs sont nécessaires, utilise les résultats "
-        "précédents pour décider du calcul suivant.\n"
-        "Quand les calculs sont terminés, donne une réponse finale "
-        "claire en français."
+        "Tu es un assistant intelligent qui peut utiliser trois outils : "
+        "add, multiply et get_current_date.\n\n"
+        "Règles d'utilisation des outils :\n"
+        "1. Utilise add pour additionner deux nombres.\n"
+        "2. Utilise multiply pour multiplier deux nombres.\n"
+        "3. Utilise get_current_date pour obtenir la date et "
+        "l'heure actuelles.\n"
+        "4. Si plusieurs opérations sont nécessaires, "
+        "utilise les résultats précédents.\n"
+        "5. N'invente jamais les résultats des outils.\n\n"
+        "Quand tu as terminé, donne une réponse finale claire "
+        "en français."
     )
+
 
     if state["tool_history"]:
         contents += (
@@ -199,10 +222,12 @@ def ask_gemini(state: AgentState) -> dict:
     }
 
 
+
 # 6. Exécution de l'outil choisi
 def execute_tool(state: AgentState) -> dict:
     name = state["tool_name"]
     history = list(state["tool_history"])
+    args = state["tool_args"]
 
     if not name or name not in TOOLS:
         return {
@@ -216,12 +241,12 @@ def execute_tool(state: AgentState) -> dict:
         }
 
     try:
-        result = TOOLS[name](**state["tool_args"])
+        result = TOOLS[name](**args)
         result_json = json.dumps(result, ensure_ascii=False)
 
         history.append(
             f"Outil : {name} | "
-            f"Arguments : {json.dumps(state['tool_args'], ensure_ascii=False)} "
+            f"Arguments : {json.dumps(args, ensure_ascii=False)} "
             f"| Résultat : {result_json}"
         )
 
@@ -234,8 +259,11 @@ def execute_tool(state: AgentState) -> dict:
             "tool_args": {},
         }
 
-    except (TypeError, ValueError) as error:
-        error_message = f"Erreur lors de l'exécution de {name} : {error}"
+    except Exception as error:
+        error_message = (
+            f"Erreur lors de l'exécution de {name} : "
+            f"{type(error).__name__}: {error}"
+        )
         history.append(error_message)
 
         return {
@@ -327,5 +355,6 @@ def run_agent(task: str) -> str:
     })
 
     return result["answer"]
+
 
 
